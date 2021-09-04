@@ -7,7 +7,7 @@ defmodule ExJoi do
         type: :map,
         required: true,
         properties: [
-          username: %{type: :string, required: true, min: 2, max: 3},
+          username: %{type: :string, required: true, min: 2, max: 15},
           age: %{type: :number, required: true, min: 20}
         ]
       }
@@ -16,9 +16,9 @@ defmodule ExJoi do
     data = %{
       "id" => "122",
       "number" => "10",
-      "user" => %{"age" => 20, "username" => :abc, "extra_inside" => "y"},
+      "user" => %{"age" => 20, "username" => "username", "extra_inside" => "y"},
       "extra_outside" => "outside",
-      "one_of" => ":das"
+      "one_of" => 10
     }
 
     validate(schema, data)
@@ -59,7 +59,7 @@ defmodule ExJoi do
             false ->
               case Enum.find(results, fn {t, _} -> t === :validation_error end) do
                 {:validation_error, msg} -> {f_data, Map.put(errors, key, msg)}
-                _ -> {f_data, errors}
+                _ -> {Map.put(f_data, key, val), errors}
               end
           end
 
@@ -69,7 +69,6 @@ defmodule ExJoi do
               {Map.put(f_data, key, val), errors}
 
             {_, message} ->
-              IO.inspect(message)
               {f_data, Map.put(errors, key, message)}
           end
       end
