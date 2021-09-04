@@ -1,59 +1,104 @@
 defmodule ExJoi do
+  def validate() do
+    schema = [
+      id: %{type: :string, required: true},
+      one_of: [%{type: :string, required: true, min: 5}, %{type: :number, required: true}],
+      user: %{
+        type: :map,
+        required: true,
+        properties: [
+          username: %{type: :string, required: true, min: 2, max: 3},
+          age: %{type: :number, required: true, min: 20}
+        ]
+      }
+    ]
+
+    data = %{
+      "id" => "122",
+      "number" => "10",
+      "user" => %{"age" => 20, "username" => :abc, "extra_inside" => "y"},
+      "extra_outside" => "outside",
+      "one_of" => ":das"
+    }
+
+    validate(schema, data)
+  end
+
   def validate(schema, data) do
     keys = Keyword.keys(schema)
     schema = Enum.into(schema, %{})
 
-    data =
-      data
-      |> convert_keys_to_atom()
-      |> filter_unknown_keys(keys)
+    data = convert_keys_to_atom(data)
+    {data, errors} = collect_errors(data, keys, schema)
 
-    collect_errors(data, keys, schema)
+    case Enum.empty?(errors) do
+      true -> {:ok, data}
+      _ -> {:error, errors}
+    end
   end
 
   defp collect_errors(data, keys, schema) do
-    Enum.reduce(keys, %{}, fn key, acc ->
-      opts = schema[key]
+    Enum.reduce(keys, {%{}, %{}}, fn key, {f_data, errors} ->
+      opts = Map.get(schema, key)
       val = data[key]
 
       cond do
-        Keyword.has_key?(opts, :type) ->
-          case validate_type(Keyword.get(opts, :type), key, val, opts) do
-            {:ok, _} ->
-              acc
+        is_list(opts) ->
+          results = Enum.map(opts, fn x -> validate_type(Map.get(x, :type), key, val, x) end)
 
-            error ->
-              cond do
-                (is_list(error) || is_map(error)) and Enum.empty?(error) -> acc
-                true -> Map.put(acc, key, error)
+          only_type_errors =
+            Enum.reduce(results, true, fn {err_t, _}, acc -> acc && err_t === :type_error end)
+
+          case only_type_errors do
+            true ->
+              types = Enum.map(opts, fn x -> x.type end)
+
+              {f_data,
+               Map.put(errors, key, "`#{key}` must be one of [#{Enum.join(types, ", ")}]")}
+
+            false ->
+              case Enum.find(results, fn {t, _} -> t === :validation_error end) do
+                {:validation_error, msg} -> {f_data, Map.put(errors, key, msg)}
+                _ -> {f_data, errors}
               end
+          end
+
+        Map.has_key?(opts, :type) ->
+          case validate_type(Map.get(opts, :type), key, val, opts) do
+            {:ok, _val} ->
+              {Map.put(f_data, key, val), errors}
+
+            {_, message} ->
+              IO.inspect(message)
+              {f_data, Map.put(errors, key, message)}
           end
       end
     end)
   end
 
   def validate_type(:string, key, val, opts) do
-    has_min = Keyword.get(opts, :min)
-    has_max = Keyword.get(opts, :max)
-    has_required = Keyword.get(opts, :required)
+    has_min = Map.get(opts, :min)
+    has_max = Map.get(opts, :max)
+    has_required = Map.get(opts, :required)
 
     case {has_required, val} do
       {false, nil} ->
         {:ok, val}
 
       {true, nil} ->
-        {:error, "`#{key}` is required"}
+        {:validation_error, "`#{key}` is required"}
 
       _ ->
         cond do
           not is_binary(val) ->
-            {:error, "`#{key}` is not a valid string"}
+            {:type_error, "`#{key}` is not a valid string"}
 
           has_max !== nil && String.length(val) > has_max ->
-            {:error, "`#{key}` length must be less than or equal to #{has_max} characters long"}
+            {:validation_error,
+             "`#{key}` length must be less than or equal to #{has_max} characters long"}
 
           has_min !== nil && String.length(val) < has_min ->
-            {:error, "`#{key}` length must be at least #{has_min} characters long"}
+            {:validation_error, "`#{key}` length must be at least #{has_min} characters long"}
 
           true ->
             {:ok, val}
@@ -62,27 +107,27 @@ defmodule ExJoi do
   end
 
   def validate_type(:number, key, val, opts) do
-    has_min = Keyword.get(opts, :min)
-    has_max = Keyword.get(opts, :max)
-    has_required = Keyword.get(opts, :required)
+    has_min = Map.get(opts, :min)
+    has_max = Map.get(opts, :max)
+    has_required = Map.get(opts, :required)
 
     case {has_required, val} do
       {false, nil} ->
         {:ok, val}
 
       {true, nil} ->
-        {:error, "`#{key}` is required"}
+        {:validation_error, "`#{key}` is required"}
 
       _ ->
         cond do
           not is_number(val) ->
-            {:error, "`#{key}` is not a valid number"}
+            {:type_error, "`#{key}` is not a valid number"}
 
           has_max !== nil && val > has_max ->
-            {:error, "`#{key}` must be less than or equal to #{has_max}"}
+            {:validation_error, "`#{key}` must be less than or equal to #{has_max}"}
 
           has_min !== nil && val < has_min ->
-            {:error, "`#{key}` must be greater than or equal to #{has_min}"}
+            {:validation_error, "`#{key}` must be greater than or equal to #{has_min}"}
 
           true ->
             {:ok, val}
@@ -91,20 +136,20 @@ defmodule ExJoi do
   end
 
   def validate_type(:map, key, val, opts) do
-    has_required = Keyword.get(opts, :required)
-    has_properties = Keyword.get(opts, :properties)
+    has_required = Map.get(opts, :required)
+    has_properties = Map.get(opts, :properties)
 
     case {has_required, val} do
       {false, nil} ->
         {:ok, val}
 
       {true, nil} ->
-        {:error, "`#{key}` is required"}
+        {:validation_error, "`#{key}` is required"}
 
       _ ->
         cond do
           not is_map(val) ->
-            {:error, "`#{key}` is not a valid object"}
+            {:type_error, "`#{key}` is not a valid object"}
 
           has_properties !== nil ->
             validate(has_properties, val)
@@ -128,9 +173,5 @@ defmodule ExJoi do
       {k, v} when is_bitstring(k) -> {String.to_atom(k), v}
       {k, v} -> {k, v}
     end)
-  end
-
-  defp filter_unknown_keys(data, keys) do
-    Enum.reject(data, fn {key, _val} -> key not in keys end) |> Enum.into(%{})
   end
 end
