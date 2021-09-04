@@ -1,8 +1,20 @@
 defmodule ExJoi do
+  # TODO: custom validator
   def validate() do
-    schema = [username: [type: :string, required: true, min: 2, max: 3]]
+    schema = [
+      id: [type: :string, required: true],
+      number: [type: :number, required: true],
+      user: [
+        type: :map,
+        required: true,
+        properties: [
+          username: [type: :string, required: true, min: 2, max: 3],
+          age: [type: :number, required: true, min: 20]
+        ]
+      ]
+    ]
 
-    data = %{"age" => 10, "username" => "xadd"}
+    data = %{"id" => 123, "number" => 10, "user" => %{"age" => 19, "username" => "xd"}}
 
     validate(schema, data)
   end
@@ -20,15 +32,21 @@ defmodule ExJoi do
   end
 
   defp collect_errors(data, keys, schema) do
-    Enum.reduce(keys, [], fn key, acc ->
+    Enum.reduce(keys, %{}, fn key, acc ->
       opts = schema[key]
       val = data[key]
 
       cond do
         Keyword.has_key?(opts, :type) ->
           case validate_type(Keyword.get(opts, :type), key, val, opts) do
-            {:error, message} -> [{:error, message} | acc]
-            _ -> acc
+            {:ok, _} ->
+              acc
+
+            error ->
+              cond do
+                (is_list(error) || is_map(error)) and Enum.empty?(error) -> acc
+                true -> Map.put(acc, key, error)
+              end
           end
       end
     end)
@@ -37,19 +55,83 @@ defmodule ExJoi do
   def validate_type(:string, key, val, opts) do
     has_min = Keyword.get(opts, :min)
     has_max = Keyword.get(opts, :max)
+    has_required = Keyword.get(opts, :required)
 
-    cond do
-      not is_binary(val) ->
-        {:error, "`#{key}` is not a valid string"}
-
-      has_max !== nil && String.length(val) > has_max ->
-        {:error, "`#{key}` length must be less than or equal to #{has_max} characters long"}
-
-      has_min !== nil && String.length(val) < has_min ->
-        {:error, "`#{key}` length must be at least #{has_min} characters long"}
-
-      true ->
+    case {has_required, val} do
+      {false, nil} ->
         {:ok, val}
+
+      {true, nil} ->
+        {:error, "`#{key}` is required"}
+
+      _ ->
+        cond do
+          not is_binary(val) ->
+            {:error, "`#{key}` is not a valid string"}
+
+          has_max !== nil && String.length(val) > has_max ->
+            {:error, "`#{key}` length must be less than or equal to #{has_max} characters long"}
+
+          has_min !== nil && String.length(val) < has_min ->
+            {:error, "`#{key}` length must be at least #{has_min} characters long"}
+
+          true ->
+            {:ok, val}
+        end
+    end
+  end
+
+  def validate_type(:number, key, val, opts) do
+    has_min = Keyword.get(opts, :min)
+    has_max = Keyword.get(opts, :max)
+    has_required = Keyword.get(opts, :required)
+
+    case {has_required, val} do
+      {false, nil} ->
+        {:ok, val}
+
+      {true, nil} ->
+        {:error, "`#{key}` is required"}
+
+      _ ->
+        cond do
+          not is_number(val) ->
+            {:error, "`#{key}` is not a valid number"}
+
+          has_max !== nil && val > has_max ->
+            {:error, "`#{key}` must be less than or equal to #{has_max}"}
+
+          has_min !== nil && val < has_min ->
+            {:error, "`#{key}` must be greater than or equal to #{has_min}"}
+
+          true ->
+            {:ok, val}
+        end
+    end
+  end
+
+  def validate_type(:map, key, val, opts) do
+    has_required = Keyword.get(opts, :required)
+    has_properties = Keyword.get(opts, :properties)
+
+    case {has_required, val} do
+      {false, nil} ->
+        {:ok, val}
+
+      {true, nil} ->
+        {:error, "`#{key}` is required"}
+
+      _ ->
+        cond do
+          not is_map(val) ->
+            {:error, "`#{key}` is not a valid object"}
+
+          has_properties !== nil ->
+            validate(has_properties, val)
+
+          true ->
+            {:ok, val}
+        end
     end
   end
 
