@@ -1,24 +1,4 @@
 defmodule ExJoi do
-  # TODO: custom validator
-  def validate() do
-    schema = [
-      id: [type: :string, required: true],
-      number: [type: :number, required: true],
-      user: [
-        type: :map,
-        required: true,
-        properties: [
-          username: [type: :string, required: true, min: 2, max: 3],
-          age: [type: :number, required: true, min: 20]
-        ]
-      ]
-    ]
-
-    data = %{"id" => 123, "number" => 10, "user" => %{"age" => 19, "username" => "xd"}}
-
-    validate(schema, data)
-  end
-
   def validate(schema, data) do
     keys = Keyword.keys(schema)
     schema = Enum.into(schema, %{})
@@ -132,6 +112,13 @@ defmodule ExJoi do
           true ->
             {:ok, val}
         end
+    end
+  end
+
+  def validate_type(type, key, val, opts) do
+    case Application.fetch_env(:ex_joi, type) do
+      {:ok, fnc} -> fnc.(type, key, val, opts)
+      :error -> raise "could not find validator for type `:#{type}`"
     end
   end
 
