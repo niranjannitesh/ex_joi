@@ -1,29 +1,4 @@
 defmodule ExJoi do
-  def validate() do
-    schema = [
-      id: %{type: :string, required: true},
-      one_of: [%{type: :string, required: true, min: 5}, %{type: :number, required: true}],
-      user: %{
-        type: :map,
-        required: true,
-        properties: [
-          username: %{type: :string, required: true, min: 2, max: 15},
-          age: %{type: :number, required: true, min: 20}
-        ]
-      }
-    ]
-
-    data = %{
-      "id" => "122",
-      "number" => "10",
-      "user" => %{"age" => 20, "username" => "username", "extra_inside" => "y"},
-      "extra_outside" => "outside",
-      "one_of" => 10
-    }
-
-    validate(schema, data)
-  end
-
   def validate(schema, data) do
     keys = Keyword.keys(schema)
     schema = Enum.into(schema, %{})
@@ -127,6 +102,50 @@ defmodule ExJoi do
 
           has_min !== nil && val < has_min ->
             {:validation_error, "`#{key}` must be greater than or equal to #{has_min}"}
+
+          true ->
+            {:ok, val}
+        end
+    end
+  end
+
+  def validate_type(:boolean, key, val, opts) do
+    has_required = Map.get(opts, :required)
+
+    case {has_required, val} do
+      {false, nil} ->
+        {:ok, val}
+
+      {true, nil} ->
+        {:validation_error, "`#{key}` is required"}
+
+      _ ->
+        cond do
+          not is_boolean(val) ->
+            {:type_error, "`#{key}` is not a valid boolean"}
+
+          true ->
+            {:ok, val}
+        end
+    end
+  end
+
+  def validate_type(:regex, key, val, opts) do
+    has_required = Map.get(opts, :required)
+    has_expression = Map.get(opts, :exp)
+    has_custom_msg = Map.get(opts, :msg)
+
+    case {has_required, val} do
+      {false, nil} ->
+        {:ok, val}
+
+      {true, nil} ->
+        {:validation_error, "`#{key}` is required"}
+
+      _ ->
+        cond do
+          has_expression !== nil and not Regex.match?(has_expression, val) ->
+            {:type_error, has_custom_msg || "`#{key}` didn't match pattern"}
 
           true ->
             {:ok, val}
